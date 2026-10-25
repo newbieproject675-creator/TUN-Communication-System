@@ -1,14 +1,11 @@
 // /admin-recruit - Admin-only command for managing other staff members'
-// personal recruitment templates.
+// personal recruitment templates and auto-recruit.
 //
-// /admin-recruit template create user:@staff id:... subject:... body:... type:...
-// /admin-recruit template edit   user:@staff id:... [subject] [body] [type]
-// /admin-recruit template delete user:@staff id:...
-// /admin-recruit template list   user:@staff
-// /admin-recruit copy from-user:@staff to-user:@staff    (staff to staff)
-// /admin-recruit copy from-user:@staff to-user:@staff id:... (single template)
-// /admin-recruit import user:@staff   (copy ALL shared alliance templates → staff)
-// /admin-recruit import user:@staff id:... (copy ONE shared template → staff)
+// /admin-recruit template create/edit/delete/list user:@staff
+// /admin-recruit copy from-user:@staff to-user:@staff [id] [overwrite]
+// /admin-recruit import user:@staff [id] [overwrite]
+// /admin-recruit status user:@staff
+// /admin-recruit auto user:@staff state:on/off
 
 const { SlashCommandBuilder, EmbedBuilder, PermissionsBitField } = require('discord.js');
 const prDb = require('../personalRecruitDb');
@@ -17,7 +14,7 @@ const db = require('../database');
 module.exports = {
   data: new SlashCommandBuilder()
     .setName('admin-recruit')
-    .setDescription('Admin: manage other staff members\' personal recruitment templates')
+    .setDescription('Admin: manage other staff members\' personal recruitment templates and auto-recruit')
 
     .addSubcommandGroup((group) =>
       group
@@ -86,7 +83,7 @@ module.exports = {
           opt.setName('id').setDescription('Specific template ID to copy (leave blank to copy ALL)').setRequired(false)
         )
         .addBooleanOption((opt) =>
-          opt.setName('overwrite').setDescription('Overwrite if template ID already exists in destination? (default: false)').setRequired(false)
+          opt.setName('overwrite').setDescription('Overwrite if ID already exists in destination? (default: false)').setRequired(false)
         )
     )
 
@@ -99,7 +96,28 @@ module.exports = {
           opt.setName('id').setDescription('Specific shared template ID to import (leave blank to import ALL)').setRequired(false)
         )
         .addBooleanOption((opt) =>
-          opt.setName('overwrite').setDescription('Overwrite if template ID already exists? (default: false)').setRequired(false)
+          opt.setName('overwrite').setDescription('Overwrite if ID already exists? (default: false)').setRequired(false)
+        )
+    )
+
+    .addSubcommand((sub) =>
+      sub
+        .setName('status')
+        .setDescription('View a staff member\'s full personal recruit status')
+        .addUserOption((opt) => opt.setName('user').setDescription('Staff member').setRequired(true))
+    )
+
+    .addSubcommand((sub) =>
+      sub
+        .setName('auto')
+        .setDescription('Turn a staff member\'s personal auto-recruit on or off on their behalf')
+        .addUserOption((opt) => opt.setName('user').setDescription('Staff member').setRequired(true))
+        .addStringOption((opt) =>
+          opt
+            .setName('state')
+            .setDescription('on or off')
+            .setRequired(true)
+            .addChoices({ name: 'on', value: 'on' }, { name: 'off', value: 'off' })
         )
     ),
 
@@ -291,6 +309,102 @@ module.exports = {
       let result = `✅ Imported **${imported}** shared template(s) into ${toUser.tag}'s personal pool.`;
       if (skipped > 0) result += ` Skipped **${skipped}** (already existed — re-run with \`overwrite:true\` to replace).`;
       return interaction.editReply(result);
+    }
+
+    // ==================== /admin-recruit status ====================
+
+    if (sub === 'status') {
+      const targetUser = interaction.options.getUser('user');
+      const targetId = targetUser.id;
+
+      const profile = prDb.getProfile(targetId);
+      const apiKey = db.getPersonalApiKey(targetId);
+      const templates = prDb.getAllPersonalTemplates(targetId);
+      const initials = templates.filter((t) => (t.type || 'initial') === 'initial');
+      const autoOn = Boolean(profile?.autoRecruitEnabled);
+      const knownCount = Object.keys(profile?.knownNationIds || {}).length;
+      const readyToRun = Boolean(apiKey) && initials.length > 0;
+
+      const byType = {};
+      for (const t of templates) {
+        const type = t.type || 'initial';
+        byType[type] = (byType[type] || 0) + 1;
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle(`🎯 ${targetUser.tag} — Personal Recruit Status`)
+        .setColor(autoOn ? 0x2ecc71 : 0xe74c3c)
+        .addFields(
+          {
+            name: 'Auto-Recruit',
+            value: autoOn ? '✅ ON — sending from their nation' : '🛑 OFF',
+            inline: true,
+          },
+          {
+            name: 'API Key',
+            value: apiKey ? '✅ Registered' : '❌ Not set — they need to run `/apikey set`',
+            inline: true,
+          },
+          {
+            name: 'Ready to Run',
+            value: readyToRun ? '✅ Yes' : '❌ No — missing API key or initial templates',
+            inline: true,
+          },
+          {
+            name: 'Personal Templates',
+            value: templates.length > 0
+              ? Object.entries(byType).map(([type, count]) => `${type}: ${count}`).join(' | ')
+              : 'None — use `/admin-recruit template create` or `/admin-recruit import`',
+            inline: false,
+          },
+          {
+            name: 'Nations Contacted (personal history)',
+            value: `${knownCount} nation(s) — these will never be re-mailed by their auto-recruit`,
+            inline: false,
+          }
+        );
+
+      return interaction.reply({ embeds: [embed], flags: 64 });
+    }
+
+    // ==================== /admin-recruit auto ====================
+
+    if (sub === 'auto') {
+      const targetUser = interaction.options.getUser('user');
+      const targetId = targetUser.id;
+      const enabled = interaction.options.getString('state') === 'on';
+
+      if (enabled) {
+        // Check prerequisites on their behalf
+        const apiKey = db.getPersonalApiKey(targetId);
+        if (!apiKey) {
+          return interaction.reply({
+            content:
+              `❌ Cannot turn on auto-recruit for ${targetUser.tag} — they haven't registered a personal API key yet.\n` +
+              `They need to run \`/apikey set key:<their key>\` first, or you can use \`/admin-recruit status user:${targetUser.tag}\` to see their full setup.`,
+            flags: 64,
+          });
+        }
+
+        const initials = prDb.getPersonalTemplatesByType(targetId, 'initial');
+        if (initials.length === 0) {
+          return interaction.reply({
+            content:
+              `❌ Cannot turn on auto-recruit for ${targetUser.tag} — they have no \`initial\` type personal templates.\n` +
+              `Add some with \`/admin-recruit template create user:@${targetUser.username} type:initial\` or import from the shared pool with \`/admin-recruit import user:@${targetUser.username}\`.`,
+            flags: 64,
+          });
+        }
+      }
+
+      prDb.setPersonalAutoRecruit(targetId, enabled);
+
+      return interaction.reply({
+        content: enabled
+          ? `✅ Auto-recruit turned **ON** for ${targetUser.tag}. New unaligned nations will be mailed from their nation every 5 minutes.`
+          : `🛑 Auto-recruit turned **OFF** for ${targetUser.tag}.`,
+        flags: 64,
+      });
     }
   },
 };

@@ -1,8 +1,7 @@
-// /help
-// Shows a categorised, button-based help menu similar to modern Discord bots.
-// Clicking a category button shows just that category's commands.
-// Self-updating: the command detail text is still generated live from the
-// actual loaded commands, so it never goes stale when new commands are added.
+// /help - Categorised, button-based interactive help menu.
+// Self-updating: command detail text is generated live from loaded commands.
+// Categories are defined here — add new commands to the right category
+// when new commands are introduced.
 
 const {
   SlashCommandBuilder,
@@ -13,10 +12,8 @@ const {
   ComponentType,
 } = require('discord.js');
 
-const FIELD_VALUE_LIMIT = 1024;
+const FIELD_LIMIT = 1024;
 
-// ---------- Category definitions ----------
-// Each category has a label, emoji, color, and which command names belong to it.
 const CATEGORIES = [
   {
     id: 'mail',
@@ -31,28 +28,34 @@ const CATEGORIES = [
     label: 'Recruitment',
     emoji: '🎯',
     color: 0xf1c40f,
-    commands: ['recruit', 'blacklist'],
-    description: 'Recruitment automation, templates, pipeline and CRM',
+    commands: ['recruit', 'blacklist', 'myrecruit'],
+    description: 'Shared recruitment system, pipeline, CRM, and personal auto-recruit',
+  },
+  {
+    id: 'engagement',
+    label: 'Engagement',
+    emoji: '📚',
+    color: 0x9b59b6,
+    commands: ['engagement'],
+    description: 'Automated member engagement and training campaigns',
   },
   {
     id: 'communications',
     label: 'Communications',
     emoji: '📢',
     color: 0x2ecc71,
-    commands: ['dm', 'announce', 'cancel'],
-    description: 'Discord DMs and channel announcements',
+    commands: ['dm', 'announce', 'announce-edit', 'cancel'],
+    description: 'Discord DMs, channel announcements and editing',
   },
   {
-    id: 'settings',
-    label: 'Settings',
+    id: 'admin',
+    label: 'Admin',
     emoji: '⚙️',
-    color: 0x9b59b6,
-    commands: ['config', 'apikey'],
-    description: 'Bot configuration and personal API key management',
+    color: 0xe74c3c,
+    commands: ['config', 'config-status', 'apikey', 'admin-recruit', 'backup'],
+    description: 'Bot configuration, API keys, admin tools and backups',
   },
 ];
-
-// ---------- Helpers ----------
 
 function describeCommandLines(command) {
   const json = command.data.toJSON();
@@ -92,10 +95,9 @@ function describeCommandLines(command) {
   return lines;
 }
 
-function packLinesIntoChunks(lines, limit = FIELD_VALUE_LIMIT) {
+function packLinesIntoChunks(lines, limit = FIELD_LIMIT) {
   const chunks = [];
   let current = '';
-
   for (let line of lines) {
     if (line.length > limit) line = line.slice(0, limit - 3) + '...';
     const candidate = current ? `${current}\n${line}` : line;
@@ -106,7 +108,6 @@ function packLinesIntoChunks(lines, limit = FIELD_VALUE_LIMIT) {
       current = candidate;
     }
   }
-
   if (current) chunks.push(current);
   return chunks;
 }
@@ -123,7 +124,6 @@ function buildCategoryEmbed(category, allCommands) {
 
     const lines = describeCommandLines(command);
     const chunks = packLinesIntoChunks(lines);
-
     chunks.forEach((chunk, i) => {
       embed.addFields({
         name: i === 0 ? `/${command.data.name}` : `/${command.data.name} (cont'd)`,
@@ -148,7 +148,6 @@ function buildHomeEmbed() {
 
 function buildButtons(activeCategoryId = null) {
   const row = new ActionRowBuilder();
-
   for (const cat of CATEGORIES) {
     row.addComponents(
       new ButtonBuilder()
@@ -158,11 +157,8 @@ function buildButtons(activeCategoryId = null) {
         .setStyle(cat.id === activeCategoryId ? ButtonStyle.Primary : ButtonStyle.Secondary)
     );
   }
-
   return row;
 }
-
-// ---------- Command ----------
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -171,7 +167,6 @@ module.exports = {
 
   async execute(interaction) {
     const allCommands = interaction.client.commands;
-
     const homeEmbed = buildHomeEmbed();
     const row = buildButtons();
 
@@ -181,7 +176,6 @@ module.exports = {
       flags: 64,
     });
 
-    // Listen for button clicks from the same user for 5 minutes
     const collector = response.createMessageComponentCollector({
       componentType: ComponentType.Button,
       filter: (i) => i.user.id === interaction.user.id,
@@ -191,20 +185,14 @@ module.exports = {
     collector.on('collect', async (btnInteraction) => {
       const catId = btnInteraction.customId.replace('help_cat_', '');
       const category = CATEGORIES.find((c) => c.id === catId);
-
       if (!category) return;
 
       const catEmbed = buildCategoryEmbed(category, allCommands);
       const updatedRow = buildButtons(catId);
-
-      await btnInteraction.update({
-        embeds: [catEmbed],
-        components: [updatedRow],
-      });
+      await btnInteraction.update({ embeds: [catEmbed], components: [updatedRow] });
     });
 
     collector.on('end', async () => {
-      // Disable all buttons after 5 minutes so they don't silently fail
       const disabledRow = new ActionRowBuilder().addComponents(
         CATEGORIES.map((cat) =>
           new ButtonBuilder()
@@ -215,7 +203,6 @@ module.exports = {
             .setDisabled(true)
         )
       );
-
       await interaction.editReply({ components: [disabledRow] }).catch(() => {});
     });
   },
