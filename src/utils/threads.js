@@ -18,7 +18,7 @@ function slugify(text) {
  * Returns the thread for a recruit, creating it if it doesn't exist yet.
  * `client` is the Discord bot client, `nationId`/`nationName` identify the recruit.
  */
-async function getOrCreateRecruitThread(client, nationId, nationName) {
+async function createOrFetchThread(client, nationId, nationName) {
   const recruit = db.getRecruit(nationId);
 
   const logChannelId = db.getMailLogChannelId();
@@ -52,6 +52,18 @@ async function getOrCreateRecruitThread(client, nationId, nationName) {
   });
 
   return thread;
+}
+
+// Several recruiters can now mail the same nation at the same moment. This makes
+// sure only ONE thread gets created per nation; everyone else reuses it.
+const inFlight = new Map();
+
+function getOrCreateRecruitThread(client, nationId, nationName) {
+  const key = String(nationId);
+  if (inFlight.has(key)) return inFlight.get(key);
+  const promise = createOrFetchThread(client, nationId, nationName).finally(() => inFlight.delete(key));
+  inFlight.set(key, promise);
+  return promise;
 }
 
 module.exports = { getOrCreateRecruitThread, slugify };
