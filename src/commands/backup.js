@@ -5,6 +5,7 @@
 const { SlashCommandBuilder, AttachmentBuilder, PermissionsBitField } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
+const store = require('../store');
 
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'bot.json');
 const DB_DIR = path.dirname(DB_PATH);
@@ -46,6 +47,7 @@ module.exports = {
         });
       }
 
+      store.flush(); // make sure the file on disk includes the very latest changes
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const filename = `tun-bot-backup-${timestamp}.json`;
       const attachment = new AttachmentBuilder(DB_PATH, { name: filename });
@@ -96,6 +98,7 @@ module.exports = {
       }
 
       // Back up the CURRENT data before overwriting it, just in case
+      store.flush();
       const safetyBackupPath = DB_PATH + '.pre-restore.' + Date.now();
       try {
         if (fs.existsSync(DB_PATH)) {
@@ -114,6 +117,7 @@ module.exports = {
       } catch (err) {
         return interaction.editReply(`❌ Failed to write the restored data: ${err.message}`);
       }
+      store.reload(); // make the bot use the restored file, not its in-memory copy
 
       // Count what was restored so the confirmation is informative
       const templateCount = Object.keys(parsed.templates || {}).length;
