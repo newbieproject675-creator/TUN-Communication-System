@@ -4,78 +4,14 @@
 //
 // The file lives at data/bot.json. Don't edit it by hand while the bot is running.
 
-const fs = require('fs');
-const path = require('path');
-
-const dbPath = path.join(__dirname, '..', 'data', 'bot.json');
-const dbDir = path.dirname(dbPath);
-
-function defaultData() {
-  return {
-    recruits: {},
-    mailLog: [],
-    knownNationIds: {},
-    knownDepartureIds: {},
-    templates: {},
-    blacklist: {},
-    personalApiKeys: {},
-    settings: {
-      autoRecruitEnabled: false,
-    },
-  };
-}
+const store = require('./store');
 
 function loadData() {
-  if (!fs.existsSync(dbPath)) {
-    const initial = defaultData();
-    fs.writeFileSync(dbPath, JSON.stringify(initial, null, 2));
-    return initial;
-  }
-
-  let raw;
-  try {
-    raw = fs.readFileSync(dbPath, 'utf8');
-  } catch (err) {
-    console.error('❌ Could not read data file, starting fresh:', err.message);
-    const initial = defaultData();
-    fs.writeFileSync(dbPath, JSON.stringify(initial, null, 2));
-    return initial;
-  }
-
-  try {
-    const parsed = JSON.parse(raw);
-    // Fill in any new fields that didn't exist in older versions of the data file.
-    return { ...defaultData(), ...parsed };
-  } catch (err) {
-    // File is corrupted (e.g. partial write during a crash).
-    // Back it up so data isn't lost, then start fresh rather than crashing.
-    const backupPath = dbPath + '.corrupted.' + Date.now();
-    console.error(
-      `❌ data/bot.json is corrupted (${err.message}). ` +
-        `Backing up to ${backupPath} and starting fresh. ` +
-        `You can restore from a /backup snapshot if you have one.`
-    );
-    try {
-      fs.copyFileSync(dbPath, backupPath);
-    } catch (backupErr) {
-      console.error('⚠️ Could not back up corrupted file:', backupErr.message);
-    }
-    const initial = defaultData();
-    fs.writeFileSync(dbPath, JSON.stringify(initial, null, 2));
-    return initial;
-  }
+  return store.load();
 }
 
-/**
- * Atomic write: write to a temp file first, then rename over the real file.
- * This prevents corruption if the process is killed mid-write, because the
- * rename is atomic at the OS level - the file is either the old version or
- * the new version, never a half-written mix of both.
- */
 function saveData(data) {
-  const tmpPath = dbPath + '.tmp';
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
-  fs.renameSync(tmpPath, dbPath);
+  store.save(data);
 }
 
 // ---------- Recruits ----------

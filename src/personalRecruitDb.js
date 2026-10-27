@@ -8,21 +8,14 @@
 // Data is stored in bot.json under `personalRecruitProfiles` keyed by
 // Discord user ID. Completely separate from the shared alliance system.
 
-const fs = require('fs');
-const path = require('path');
-
-const dbPath = path.join(__dirname, '..', 'data', 'bot.json');
+const store = require('./store');
 
 function loadData() {
-  if (!fs.existsSync(dbPath)) return {};
-  try { return JSON.parse(fs.readFileSync(dbPath, 'utf8')); }
-  catch { return {}; }
+  return store.load();
 }
 
 function saveData(data) {
-  const tmp = dbPath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
-  fs.renameSync(tmp, dbPath);
+  store.save(data);
 }
 
 function getProfile(userId) {

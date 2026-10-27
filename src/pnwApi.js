@@ -433,7 +433,7 @@ const ALLIANCE_POSITION = { NOALLIANCE: 0, APPLICANT: 1, MEMBER: 2, OFFICER: 3, 
  */
 async function getMyApplicants(allianceId) {
   const query = `
-    query GetApplicants($allianceId: [Int], $position: Int) {
+    query GetApplicants($allianceId: [Int], $position: [Int]) {
       nations(alliance_id: $allianceId, alliance_position: $position, first: 100) {
         data {
           id
@@ -448,7 +448,7 @@ async function getMyApplicants(allianceId) {
   `;
   const data = await pnwRequest(query, {
     allianceId: [Number(allianceId)],
-    position: ALLIANCE_POSITION.APPLICANT,
+    position: [ALLIANCE_POSITION.APPLICANT],
   });
   return data.nations.data;
 }

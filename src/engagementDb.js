@@ -3,24 +3,14 @@
 // It uses the same bot.json file via the same loadData/saveData pattern,
 // but only touches the engagement-specific fields.
 
-const fs = require('fs');
-const path = require('path');
-
-const dbPath = path.join(__dirname, '..', 'data', 'bot.json');
+const store = require('./store');
 
 function loadData() {
-  if (!fs.existsSync(dbPath)) return {};
-  try {
-    return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-  } catch {
-    return {};
-  }
+  return store.load();
 }
 
 function saveData(data) {
-  const tmpPath = dbPath + '.tmp';
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2));
-  fs.renameSync(tmpPath, dbPath);
+  store.save(data);
 }
 
 function ensureEngagementFields(data) {
