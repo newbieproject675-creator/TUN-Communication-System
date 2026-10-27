@@ -1,34 +1,26 @@
-// Run this file ONCE (and again whenever you add/change a command) with:
-//   node src/deployCommands.js
-// It tells Discord which slash commands your bot has, so they show up when typing "/" in your server.
+// OPTIONAL manual deploy: node src/deployCommands.js  (or: npm run deploy-commands)
+// You normally don't need this anymore — the bot syncs its slash commands
+// automatically every time it starts (see src/commandRegistry.js).
+// Running this file always forces a fresh push.
 
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const { REST, Routes } = require('discord.js');
+const { syncCommands } = require('./commandRegistry');
 
-const commands = [];
 const commandsPath = path.join(__dirname, 'commands');
-const commandFiles = fs.readdirSync(commandsPath).filter((file) => file.endsWith('.js'));
+const commands = fs
+  .readdirSync(commandsPath)
+  .filter((file) => file.endsWith('.js'))
+  .map((file) => require(path.join(commandsPath, file)).data.toJSON());
 
-for (const file of commandFiles) {
-  const command = require(path.join(commandsPath, file));
-  commands.push(command.data.toJSON());
-}
-
-const rest = new REST().setToken(process.env.DISCORD_TOKEN);
-
-(async () => {
-  try {
-    console.log(`Registering ${commands.length} slash command(s)...`);
-
-    await rest.put(
-      Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, process.env.DISCORD_GUILD_ID),
-      { body: commands }
-    );
-
-    console.log('✅ Slash commands registered successfully. Check your Discord server!');
-  } catch (error) {
-    console.error('❌ Failed to register commands:', error);
-  }
-})();
+syncCommands({
+  commands,
+  token: process.env.DISCORD_TOKEN,
+  clientId: process.env.DISCORD_CLIENT_ID,
+  guildId: process.env.DISCORD_GUILD_ID || null,
+  force: true,
+}).catch((error) => {
+  console.error('❌ Failed to register commands:', error);
+  process.exit(1);
+});

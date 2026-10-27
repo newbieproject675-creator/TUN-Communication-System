@@ -54,8 +54,8 @@ function getAllProfiles() {
 // ---------- Settings ----------
 
 function setPersonalAutoRecruit(userId, enabled) {
-  const data = loadData();
   ensureProfile(userId);
+  const data = loadData();
   data.personalRecruitProfiles[userId].autoRecruitEnabled = enabled;
   saveData(data);
 }
@@ -63,8 +63,8 @@ function setPersonalAutoRecruit(userId, enabled) {
 // ---------- Personal templates ----------
 
 function addPersonalTemplate(userId, { id, subject, body, type }) {
-  const data = loadData();
   ensureProfile(userId);
+  const data = loadData();
   const profile = data.personalRecruitProfiles[userId];
   if (profile.templates[id]) throw new Error(`You already have a template with ID "${id}".`);
   profile.templates[id] = {
@@ -97,8 +97,8 @@ function getRandomPersonalTemplate(userId, type = 'initial') {
 }
 
 function updatePersonalTemplate(userId, id, fields) {
-  const data = loadData();
   ensureProfile(userId);
+  const data = loadData();
   const profile = data.personalRecruitProfiles[userId];
   if (!profile.templates[id]) throw new Error(`Template "${id}" not found.`);
   profile.templates[id] = { ...profile.templates[id], ...fields };
@@ -124,9 +124,20 @@ function isPersonalKnownNation(userId, nationId) {
 }
 
 function markPersonalNationKnown(userId, nationId) {
-  const data = loadData();
   ensureProfile(userId);
+  const data = loadData();
   data.personalRecruitProfiles[userId].knownNationIds[String(nationId)] = new Date().toISOString();
+  saveData(data);
+}
+
+// Marks many nations known in ONE disk write (used for skipped/blacklisted nations).
+function markPersonalNationsKnown(userId, nationIds) {
+  if (!nationIds.length) return;
+  ensureProfile(userId);
+  const data = loadData();
+  const now = new Date().toISOString();
+  const known = data.personalRecruitProfiles[userId].knownNationIds;
+  for (const id of nationIds) known[String(id)] = now;
   saveData(data);
 }
 
@@ -144,4 +155,5 @@ module.exports = {
   deletePersonalTemplate,
   isPersonalKnownNation,
   markPersonalNationKnown,
+  markPersonalNationsKnown,
 };
