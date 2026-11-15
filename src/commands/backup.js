@@ -5,10 +5,22 @@
 const { SlashCommandBuilder, AttachmentBuilder, PermissionsBitField } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
+const { promisify } = require('util');
 const store = require('../store');
 
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'bot.json');
 const DB_DIR = path.dirname(DB_PATH);
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
+
+// Discord's default upload limit for bots is 10 MB (a boosted server can allow more).
+const DEFAULT_UPLOAD_LIMIT = 10 * 1024 * 1024;
+const UPLOAD_MARGIN = 256 * 1024;
+
+function formatMB(bytes) {
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
 
 module.exports = {
   data: new SlashCommandBuilder()
@@ -26,7 +38,7 @@ module.exports = {
         .addAttachmentOption((opt) =>
           opt
             .setName('file')
-            .setDescription('The .json backup file from /backup export')
+            .setDescription('The backup file from /backup export (.json.gz or .json)')
             .setRequired(true)
         )
     ),
@@ -47,19 +59,36 @@ module.exports = {
         });
       }
 
-      store.flush(); // make sure the file on disk includes the very latest changes
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const filename = `tun-bot-backup-${timestamp}.json`;
-      const attachment = new AttachmentBuilder(DB_PATH, { name: filename });
+      // Compressing a large file can take a moment, so acknowledge right away.
+      await interaction.deferReply({ flags: 64 });
 
-      return interaction.reply({
+      store.flush(); // make sure the file on disk includes the very latest changes
+      const rawBuffer = await fs.promises.readFile(DB_PATH);
+      // The data file is plain text, so it compresses very well (usually 10x or more).
+      // That keeps the backup under Discord's upload limit even as the bot's data grows.
+      const compressed = await gzip(rawBuffer, { level: 9 });
+
+      const limit = (interaction.guild?.maximumUploadLimit ?? DEFAULT_UPLOAD_LIMIT) - UPLOAD_MARGIN;
+      if (compressed.length > limit) {
+        console.error(`❌ Backup too large for Discord: ${formatMB(compressed.length)} compressed (${formatMB(rawBuffer.length)} raw), limit ${formatMB(limit)}.`);
+        return interaction.editReply(
+          `❌ The backup is **${formatMB(compressed.length)}** even after compression, which is over Discord's upload limit here (**${formatMB(limit)}**).\n\n` +
+            `The raw data file is ${formatMB(rawBuffer.length)}. You can download \`data/bot.json\` directly from your Railway volume instead.`
+        );
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `tun-bot-backup-${timestamp}.json.gz`;
+      const attachment = new AttachmentBuilder(compressed, { name: filename });
+
+      return interaction.editReply({
         content:
           `📦 **Bot Backup — ${new Date().toUTCString()}**\n\n` +
-          `This file contains all your bot data: templates, configured messages, recruit history, alliance settings, and personal API keys.\n\n` +
+          `This file contains all your bot data: templates, configured messages, recruit history, alliance settings, and personal API keys.\n` +
+          `Size: ${formatMB(compressed.length)} compressed (${formatMB(rawBuffer.length)} uncompressed).\n\n` +
           `⚠️ **Keep this file private** — it contains sensitive data including API keys.\n\n` +
-          `To restore: use \`/backup restore\` and attach this file.`,
+          `To restore: use \`/backup restore\` and attach this file. (It's a standard .gz file — unzip it to see the plain JSON.)`,
         files: [attachment],
-        flags: 64,
       });
     }
 
@@ -73,7 +102,12 @@ module.exports = {
       let raw;
       try {
         const response = await fetch(attachment.url);
-        raw = await response.text();
+        let buffer = Buffer.from(await response.arrayBuffer());
+        // .json.gz backups start with the gzip marker bytes 1f 8b; plain .json files still work too.
+        if (buffer.length > 2 && buffer[0] === 0x1f && buffer[1] === 0x8b) {
+          buffer = await gunzip(buffer);
+        }
+        raw = buffer.toString('utf8');
       } catch (err) {
         return interaction.editReply(`❌ Could not download the backup file: ${err.message}`);
       }
