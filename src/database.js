@@ -72,8 +72,11 @@ function setFollowUpStage(nationId, stage) {
 
 function addMailLog({ nationId, direction, subject, message, sentBy }) {
   const data = loadData();
+  // Ids keep counting upwards even after old records are cleaned out.
+  const lastId = data.mailLog.length > 0 ? Number(data.mailLog[data.mailLog.length - 1].id) || 0 : 0;
+  const archived = (data.archivedMailCounts?.outgoing || 0) + (data.archivedMailCounts?.incoming || 0);
   data.mailLog.push({
-    id: data.mailLog.length + 1,
+    id: Math.max(lastId, archived) + 1,
     nation_id: nationId,
     direction,
     subject,
@@ -316,7 +319,9 @@ function getStats() {
   const recruits = Object.values(data.recruits);
   const mailLog = data.mailLog;
 
-  const sentCount = mailLog.filter((m) => m.direction === 'outgoing').length;
+  // Lifetime total: mails still in the log + mails whose records were cleaned out as too old.
+  const sentCount =
+    mailLog.filter((m) => m.direction === 'outgoing').length + (data.archivedMailCounts?.outgoing || 0);
   const byStage = {};
   for (const r of recruits) {
     byStage[r.stage] = (byStage[r.stage] || 0) + 1;

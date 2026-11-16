@@ -11,6 +11,7 @@ const { startAllianceExitScanner } = require('./scheduler/allianceExitScanner');
 const { startApplicantScanner } = require('./scheduler/applicantScanner');
 const { startEngagementScheduler } = require('./scheduler/engagementScanner');
 const { startPersonalRecruitScanner } = require('./scheduler/personalRecruitScanner');
+const { startCleanupScheduler } = require('./scheduler/cleanupScheduler');
 
 // Make sure required settings exist before we even try to start.
 const required = ['DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'PNW_API_KEY'];
@@ -71,6 +72,7 @@ client.once('clientReady', async () => {
   startApplicantScanner(client);
   startEngagementScheduler(client);
   startPersonalRecruitScanner(client);
+  startCleanupScheduler();
 });
 
 client.login(process.env.DISCORD_TOKEN);
