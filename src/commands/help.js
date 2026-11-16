@@ -52,7 +52,7 @@ const CATEGORIES = [
     label: 'Admin',
     emoji: '⚙️',
     color: 0xe74c3c,
-    commands: ['config', 'config-status', 'apikey', 'admin-recruit', 'backup'],
+    commands: ['config', 'config-status', 'apikey', 'admin-recruit', 'backup', 'cleanup'],
     description: 'Bot configuration, API keys, admin tools and backups',
   },
 ];
